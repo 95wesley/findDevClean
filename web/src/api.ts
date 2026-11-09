@@ -27,6 +27,38 @@ export interface ScanResult {
   errors: string[];
 }
 
+export interface ScanProgress {
+  phase: "walk" | "caches" | "done";
+  done: number;
+  total: number;
+  current?: string;
+}
+
+interface ScanJob {
+  id: string;
+  state: "running" | "done" | "error";
+  progress: ScanProgress;
+  result?: ScanResult;
+  error?: string;
+}
+
+export interface TreeNode {
+  name: string;
+  path?: string;
+  is_dir: boolean;
+  size: number;
+  children?: TreeNode[];
+}
+
+interface TreeJob {
+  id: string;
+  state: "running" | "done";
+  done: number;
+  total: number;
+  tree?: TreeNode;
+  errors?: string[];
+}
+
 export type Status = "would_remove" | "removed" | "restored" | "rejected" | "failed";
 
 export interface Outcome {
@@ -97,7 +129,27 @@ async function call<T>(path: string, method: "GET" | "POST", body?: unknown): Pr
 
 export const api = {
   rules: () => call<Rule[]>("/api/rules", "GET"),
-  scan: () => call<ScanResult>("/api/scan", "POST"),
+  // Starts a scan and polls its progress until it finishes.
+  scan: async (onProgress: (p: ScanProgress) => void): Promise<ScanResult> => {
+    const { id } = await call<{ id: string }>("/api/scan", "POST");
+    for (;;) {
+      const job = await call<ScanJob>(`/api/scan/${id}`, "GET");
+      onProgress(job.progress);
+      if (job.state === "done" && job.result) return job.result;
+      if (job.state === "error") throw new Error(job.error ?? "erro no escaneamento");
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  },
+  // Builds the disk map of the home folder and polls until it is ready.
+  buildTree: async (onProgress: (p: { done: number; total: number }) => void): Promise<TreeNode> => {
+    const { id } = await call<{ id: string }>("/api/tree", "POST");
+    for (;;) {
+      const job = await call<TreeJob>(`/api/tree/${id}`, "GET");
+      onProgress({ done: job.done, total: job.total });
+      if (job.state === "done" && job.tree) return job.tree;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  },
   clean: (paths: string[], dryRun: boolean) =>
     call<CleanReport>("/api/clean", "POST", { paths, dry_run: dryRun }),
   batches: () => call<Batch[]>("/api/batches", "GET"),

@@ -32,6 +32,20 @@ type Options struct {
 	Home     string          // enables global cache rules when set
 	MaxDepth int             // <= 0 uses DefaultMaxDepth
 	SkipDirs map[string]bool // nil uses DefaultSkipDirs
+	// OnProgress, when set, receives updates while the scan runs.
+	OnProgress func(Progress)
+}
+
+// Progress describes where a scan is. Phases run in order: "walk" (project
+// folders), "caches" (fixed cache paths), then "done".
+//
+// In the walk phase, Total counts the top-level entries of every root, so the
+// percentage is an estimate: nested folders are not known in advance.
+type Progress struct {
+	Phase   string `json:"phase"`
+	Done    int    `json:"done"`
+	Total   int    `json:"total"`
+	Current string `json:"current,omitempty"`
 }
 
 // Finding is one matched directory or cache location.
@@ -75,6 +89,22 @@ func Scan(opts Options) Result {
 
 	res := Result{Findings: []Finding{}, Errors: []string{}}
 
+	emit := func(p Progress) {
+		if opts.OnProgress != nil {
+			opts.OnProgress(p)
+		}
+	}
+
+	// Estimate the walk: top-level entries of every existing root.
+	walkTotal := 0
+	for _, root := range opts.Roots {
+		if entries, err := os.ReadDir(filepath.Clean(root)); err == nil {
+			walkTotal += len(entries)
+		}
+	}
+	walkDone := 0
+	emit(Progress{Phase: "walk", Done: 0, Total: walkTotal})
+
 	for _, root := range opts.Roots {
 		root = filepath.Clean(root)
 		if _, err := os.Stat(root); err != nil {
@@ -89,6 +119,10 @@ func Scan(opts Options) Result {
 					return fs.SkipDir
 				}
 				return nil
+			}
+			if path != root && filepath.Dir(path) == root {
+				walkDone++
+				emit(Progress{Phase: "walk", Done: walkDone, Total: walkTotal, Current: path})
 			}
 			// WalkDir does not follow symlinks, so symlinked dirs are never
 			// entered and never counted.
@@ -130,8 +164,9 @@ func Scan(opts Options) Result {
 	}
 
 	if opts.Home != "" {
-		addGlobal(&res, opts.Rules, opts.Home)
+		addGlobal(&res, opts.Rules, opts.Home, emit)
 	}
+	emit(Progress{Phase: "done", Done: 1, Total: 1})
 
 	sort.SliceStable(res.Findings, func(i, j int) bool {
 		return res.Findings[i].Size > res.Findings[j].Size
@@ -141,13 +176,29 @@ func Scan(opts Options) Result {
 
 // addGlobal checks each fixed cache path. Missing caches are normal and are
 // silently skipped.
-func addGlobal(res *Result, all []rules.Rule, home string) {
-	seen := make(map[string]bool)
+func addGlobal(res *Result, all []rules.Rule, home string, emit func(Progress)) {
+	// Collect the paths first so progress can report "k of n".
+	var paths []struct {
+		rule rules.Rule
+		path string
+	}
 	for _, r := range all {
 		if !r.IsGlobal() {
 			continue
 		}
 		for _, p := range r.GlobalPaths(home, runtime.GOOS) {
+			paths = append(paths, struct {
+				rule rules.Rule
+				path string
+			}{r, p})
+		}
+	}
+
+	seen := make(map[string]bool)
+	for i, item := range paths {
+		r, p := item.rule, item.path
+		emit(Progress{Phase: "caches", Done: i, Total: len(paths), Current: p})
+		{
 			if seen[p] {
 				continue
 			}
@@ -163,7 +214,7 @@ func addGlobal(res *Result, all []rules.Rule, home string) {
 				size = s
 				res.Errors = append(res.Errors, errs...)
 			case info.Mode().IsRegular():
-				size = info.Size()
+				size = diskSize(info)
 			default:
 				continue
 			}
@@ -218,7 +269,7 @@ func SizeOf(dir string) (int64, []string) {
 			return nil
 		}
 		if info.Mode().IsRegular() {
-			total += info.Size()
+			total += diskSize(info)
 		}
 		return nil
 	})

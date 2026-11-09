@@ -7,3 +7,4 @@ web/dist/*
 
 # Skill do Archify instalada localmente (reinstalável via skills-lock.json)
 .claude/skills/archify/
+.DS_Store

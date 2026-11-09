@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"findDevClean/internal/rules"
+	"findDevClean/internal/scanner"
 )
 
 func write(t *testing.T, p string, n int) {
@@ -52,8 +53,10 @@ func TestDryRunTouchesNothing(t *testing.T) {
 	if len(rep.Outcomes) != 1 || rep.Outcomes[0].Status != StatusWouldRemove {
 		t.Fatalf("outcomes = %+v, want one would_remove", rep.Outcomes)
 	}
-	if rep.Freed != 400 {
-		t.Errorf("freed = %d, want 400", rep.Freed)
+	// Dry run leaves the folder in place, so its on-disk size is still measurable.
+	want, _ := scanner.SizeOf(nm)
+	if rep.Freed != want {
+		t.Errorf("freed = %d, want %d", rep.Freed, want)
 	}
 	if _, err := os.Stat(nm); err != nil {
 		t.Errorf("dry run removed the directory: %v", err)

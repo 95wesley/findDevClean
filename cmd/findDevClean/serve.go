@@ -27,6 +27,7 @@ func runServe(args []string) int {
 	fset.Var(&extraHosts, "allow-host", "host:porta aceito no header Host (repetível)")
 	publicPort := fset.Int("public-port", 0, "porta pela qual o navegador acessa (ex.: porta publicada no Docker); padrão: a porta de escuta")
 	qdirFlag := fset.String("quarantine", "", "pasta da quarentena")
+	openFlag := fset.Bool("open", false, "abre a interface no navegador padrão")
 	if err := fset.Parse(args); err != nil {
 		return 2
 	}
@@ -105,6 +106,11 @@ func runServe(args []string) int {
 	}()
 
 	fmt.Printf("findDevClean em execução. Abra no navegador:\n  http://localhost:%d/?token=%s\n", shown, token)
+	if *openFlag {
+		if err := openBrowser(fmt.Sprintf("http://localhost:%d/?token=%s", shown, token)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}
 	fmt.Println("Ctrl+C para encerrar.")
 
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {

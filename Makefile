@@ -1,4 +1,4 @@
-.PHONY: ui build test vet docker run-docker clean
+.PHONY: ui build test vet docker run-docker app install-app clean
 
 ui:
 	cd web && npm ci && npm run build
@@ -21,5 +21,11 @@ run-docker:
 		-v "$$HOME:/home/nonroot" \
 		finddevclean:latest
 
+app:
+	./scripts/build-mac-app.sh
+
+install-app:
+	./scripts/build-mac-app.sh --install
+
 clean:
-	rm -rf bin web/dist/* && touch web/dist/.gitkeep
+	rm -rf bin dist web/dist/* && touch web/dist/.gitkeep

@@ -8,11 +8,15 @@
 package server
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 
 	"findDevClean/internal/cleaner"
 	"findDevClean/internal/rules"
@@ -40,6 +44,33 @@ type server struct {
 	cfg     Config
 	hosts   map[string]bool
 	origins map[string]bool
+
+	mu   sync.Mutex
+	job  *scanJob // only the latest scan is kept
+	tree *treeJob // only the latest disk map is kept
+}
+
+// treeJob builds the disk map of the home folder in the background.
+type treeJob struct {
+	ID     string        `json:"id"`
+	State  string        `json:"state"` // running | done
+	Done   int           `json:"done"`  // top-level entries measured
+	Total  int           `json:"total"` // top-level entries in the home folder
+	Tree   *scanner.Node `json:"tree,omitempty"`
+	Errors []string      `json:"errors,omitempty"`
+}
+
+// mapDepth is how many folder levels the disk map expands.
+const mapDepth = 2
+
+// scanJob is one background scan. The client polls it for progress and, when
+// State is "done", reads the result from the same response.
+type scanJob struct {
+	ID       string           `json:"id"`
+	State    string           `json:"state"` // running | done | error
+	Progress scanner.Progress `json:"progress"`
+	Result   *scanner.Result  `json:"result,omitempty"`
+	Error    string           `json:"error,omitempty"`
 }
 
 // New returns the HTTP handler.
@@ -53,7 +84,10 @@ func New(cfg Config) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/rules", s.api(s.handleRules))
-	mux.HandleFunc("POST /api/scan", s.api(s.handleScan))
+	mux.HandleFunc("POST /api/scan", s.api(s.handleScanStart))
+	mux.HandleFunc("GET /api/scan/{id}", s.api(s.handleScanStatus))
+	mux.HandleFunc("POST /api/tree", s.api(s.handleTreeStart))
+	mux.HandleFunc("GET /api/tree/{id}", s.api(s.handleTreeStatus))
 	mux.HandleFunc("POST /api/clean", s.api(s.handleClean))
 	mux.HandleFunc("GET /api/batches", s.api(s.handleBatches))
 	mux.HandleFunc("POST /api/undo", s.api(s.handleUndo))
@@ -93,13 +127,125 @@ func (s *server) handleRules(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.cfg.Rules)
 }
 
-func (s *server) handleScan(w http.ResponseWriter, r *http.Request) {
-	res := scanner.Scan(scanner.Options{
-		Roots: s.cfg.Roots,
-		Rules: s.cfg.Rules,
-		Home:  s.cfg.Home,
-	})
-	writeJSON(w, http.StatusOK, res)
+// handleScanStart starts a scan in the background and returns its id at once,
+// so the client can show progress instead of waiting for one long response.
+func (s *server) handleScanStart(w http.ResponseWriter, r *http.Request) {
+	id, err := newJobID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	job := &scanJob{ID: id, State: "running", Progress: scanner.Progress{Phase: "walk"}}
+	s.mu.Lock()
+	s.job = job
+	s.mu.Unlock()
+
+	go func() {
+		res := scanner.Scan(scanner.Options{
+			Roots: s.cfg.Roots,
+			Rules: s.cfg.Rules,
+			Home:  s.cfg.Home,
+			OnProgress: func(p scanner.Progress) {
+				s.updateJob(id, func(j *scanJob) { j.Progress = p })
+			},
+		})
+		s.updateJob(id, func(j *scanJob) {
+			j.State = "done"
+			j.Result = &res
+			j.Progress = scanner.Progress{Phase: "done", Done: 1, Total: 1}
+		})
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"id": id})
+}
+
+func (s *server) handleScanStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.mu.Lock()
+	job := s.job
+	var snapshot scanJob
+	if job != nil && job.ID == id {
+		snapshot = *job
+	}
+	s.mu.Unlock()
+	if snapshot.ID == "" {
+		writeError(w, http.StatusNotFound, "escaneamento não encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+// updateJob applies a change to the job with the given id, if it is still the current one.
+func (s *server) updateJob(id string, change func(*scanJob)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.job != nil && s.job.ID == id {
+		change(s.job)
+	}
+}
+
+// handleTreeStart builds the disk map of the home folder in the background.
+func (s *server) handleTreeStart(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Home == "" {
+		writeError(w, http.StatusInternalServerError, "pasta home não disponível")
+		return
+	}
+	id, err := newJobID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	job := &treeJob{ID: id, State: "running"}
+	s.mu.Lock()
+	s.tree = job
+	s.mu.Unlock()
+
+	go func() {
+		tree, errs := scanner.BuildTree(s.cfg.Home, mapDepth, func(done, total int) {
+			s.updateTree(id, func(j *treeJob) { j.Done, j.Total = done, total })
+		})
+		if len(errs) > 50 {
+			errs = errs[:50] // keep the response small; the first errors are enough
+		}
+		s.updateTree(id, func(j *treeJob) {
+			j.State = "done"
+			j.Tree = tree
+			j.Errors = errs
+		})
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"id": id})
+}
+
+func (s *server) handleTreeStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.mu.Lock()
+	var snapshot treeJob
+	if s.tree != nil && s.tree.ID == id {
+		snapshot = *s.tree
+	}
+	s.mu.Unlock()
+	if snapshot.ID == "" {
+		writeError(w, http.StatusNotFound, "mapa não encontrado")
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *server) updateTree(id string, change func(*treeJob)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tree != nil && s.tree.ID == id {
+		change(s.tree)
+	}
+}
+
+func newJobID() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("gerar id do escaneamento: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 type cleanRequest struct {

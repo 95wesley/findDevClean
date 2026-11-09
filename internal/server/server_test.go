@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"findDevClean/internal/rules"
 )
@@ -97,19 +98,43 @@ func TestEmptyConfiguredTokenRejectsEverything(t *testing.T) {
 func TestScanReturnsFindings(t *testing.T) {
 	h, _ := newHandler(t)
 	rec := do(h, "POST", "/api/scan", "localhost:7777", "http://localhost:7777", token, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d body = %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d body = %s", rec.Code, rec.Body)
 	}
-	var res struct {
-		Findings []struct {
-			RuleID string `json:"rule_id"`
-		} `json:"findings"`
+	var started struct {
+		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
-		t.Fatal(err)
+	if err := json.Unmarshal(rec.Body.Bytes(), &started); err != nil || started.ID == "" {
+		t.Fatalf("no scan id in %s", rec.Body)
 	}
-	if len(res.Findings) != 1 || res.Findings[0].RuleID != "node-modules" {
-		t.Errorf("findings = %+v, want one node-modules", res.Findings)
+
+	// The scan runs in the background: poll until it reports done.
+	var job struct {
+		State  string `json:"state"`
+		Result struct {
+			Findings []struct {
+				RuleID string `json:"rule_id"`
+			} `json:"findings"`
+		} `json:"result"`
+	}
+	for i := 0; i < 200; i++ {
+		rec = do(h, "GET", "/api/scan/"+started.ID, "localhost:7777", "", token, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status poll = %d body = %s", rec.Code, rec.Body)
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &job); err != nil {
+			t.Fatal(err)
+		}
+		if job.State == "done" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if job.State != "done" {
+		t.Fatalf("scan never finished, state = %q", job.State)
+	}
+	if n := len(job.Result.Findings); n != 1 || job.Result.Findings[0].RuleID != "node-modules" {
+		t.Errorf("findings = %+v, want one node-modules", job.Result.Findings)
 	}
 }
 

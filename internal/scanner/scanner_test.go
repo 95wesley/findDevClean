@@ -10,8 +10,9 @@ import (
 	"findDevClean/internal/rules"
 )
 
-// writeFile creates path under root with n bytes of content.
-func writeFile(t *testing.T, root, rel string, n int) {
+// writeFile creates path under root with n bytes of content and returns the
+// space it occupies on disk, which is what the scanner reports.
+func writeFile(t *testing.T, root, rel string, n int) int64 {
 	t.Helper()
 	p := filepath.Join(root, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -20,6 +21,11 @@ func writeFile(t *testing.T, root, rel string, n int) {
 	if err := os.WriteFile(p, make([]byte, n), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return diskSize(info)
 }
 
 func defaultRules(t *testing.T) []rules.Rule {
@@ -44,22 +50,22 @@ func TestScanMatchesWithMarkers(t *testing.T) {
 
 	// Real JS project: node_modules has package.json next to it.
 	writeFile(t, root, "js-app/package.json", 10)
-	writeFile(t, root, "js-app/node_modules/lib/index.js", 100)
+	nmSize := writeFile(t, root, "js-app/node_modules/lib/index.js", 100)
 	// Nested node_modules inside node_modules must not be counted twice.
-	writeFile(t, root, "js-app/node_modules/lib/node_modules/x/y.js", 50)
+	nmSize += writeFile(t, root, "js-app/node_modules/lib/node_modules/x/y.js", 50)
 
 	// node_modules without package.json is not a match.
 	writeFile(t, root, "loose/node_modules/a.js", 999)
 
 	// Rust project with Cargo.toml.
 	writeFile(t, root, "rs-app/Cargo.toml", 10)
-	writeFile(t, root, "rs-app/target/debug/bin", 200)
+	targetSize := writeFile(t, root, "rs-app/target/debug/bin", 200)
 
 	// target without Cargo.toml is not a match.
 	writeFile(t, root, "not-rust/target/out", 300)
 
 	// pycache needs no marker.
-	writeFile(t, root, "py/src/__pycache__/m.pyc", 40)
+	pycacheSize := writeFile(t, root, "py/src/__pycache__/m.pyc", 40)
 
 	res := Scan(Options{Roots: []string{root}, Rules: defaultRules(t)})
 	byID := findingsByID(res)
@@ -67,19 +73,19 @@ func TestScanMatchesWithMarkers(t *testing.T) {
 	if n := len(byID["node-modules"]); n != 1 {
 		t.Fatalf("node-modules matches = %d, want 1", n)
 	}
-	if got := byID["node-modules"][0].Size; got != 150 {
-		t.Errorf("node_modules size = %d, want 150 (nested must not double count)", got)
+	if got := byID["node-modules"][0].Size; got != nmSize {
+		t.Errorf("node_modules size = %d, want %d (nested must not double count)", got, nmSize)
 	}
 	if n := len(byID["rust-target"]); n != 1 {
 		t.Fatalf("rust-target matches = %d, want 1", n)
 	}
-	if got := byID["rust-target"][0].Size; got != 200 {
-		t.Errorf("target size = %d, want 200", got)
+	if got := byID["rust-target"][0].Size; got != targetSize {
+		t.Errorf("target size = %d, want %d", got, targetSize)
 	}
 	if n := len(byID["python-pycache"]); n != 1 {
 		t.Fatalf("python-pycache matches = %d, want 1", n)
 	}
-	if want := int64(150 + 200 + 40); res.Total != want {
+	if want := nmSize + targetSize + pycacheSize; res.Total != want {
 		t.Errorf("total = %d, want %d", res.Total, want)
 	}
 }
@@ -156,15 +162,15 @@ func TestScanGlobalCachesUnderHome(t *testing.T) {
 	if len(cache) == 0 {
 		t.Skipf("npm-cache has no path on %s", runtime.GOOS)
 	}
-	writeFile(t, filepath.Dir(cache[0]), filepath.Base(cache[0])+"/content-v2/x", 700)
+	want := writeFile(t, filepath.Dir(cache[0]), filepath.Base(cache[0])+"/content-v2/x", 700)
 
 	res := Scan(Options{Roots: []string{}, Rules: rs, Home: home})
 	byID := findingsByID(res)
 	if n := len(byID["npm-cache"]); n != 1 {
 		t.Fatalf("npm-cache findings = %d, want 1", n)
 	}
-	if got := byID["npm-cache"][0].Size; got != 700 {
-		t.Errorf("npm-cache size = %d, want 700", got)
+	if got := byID["npm-cache"][0].Size; got != want {
+		t.Errorf("npm-cache size = %d, want %d", got, want)
 	}
 	// Missing caches (pip, go-build, ...) must not produce findings.
 	if len(byID["pip-cache"]) != 0 {

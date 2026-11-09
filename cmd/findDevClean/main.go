@@ -24,9 +24,10 @@ podem ser restaurados com "undo".
 `
 
 func main() {
+	// Without a command the app starts its server on a free port and opens
+	// the browser, so double-clicking the binary is enough on Windows and Linux.
 	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		os.Exit(runServe([]string{"--open", "--addr", "127.0.0.1:0"}))
 	}
 	args := os.Args[2:]
 	var code int
