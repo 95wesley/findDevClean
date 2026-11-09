@@ -1,4 +1,4 @@
-.PHONY: ui build test vet docker run-docker app install-app clean
+.PHONY: ui build test vet docker run-docker app install-app release clean
 
 ui:
 	cd web && npm ci && npm run build
@@ -26,6 +26,9 @@ app:
 
 install-app:
 	./scripts/build-mac-app.sh --install
+
+release:
+	./scripts/build-release.sh
 
 clean:
 	rm -rf bin dist web/dist/* && touch web/dist/.gitkeep

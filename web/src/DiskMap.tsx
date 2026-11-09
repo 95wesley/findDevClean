@@ -6,6 +6,13 @@ import type { T } from "./i18n";
 const W = 880;
 const H = 420;
 
+// Cuts text to fit a block, adding an ellipsis when it is shortened.
+function truncate(text: string, max: number): string {
+  if (max <= 0) return "";
+  if (text.length <= max) return text;
+  return max <= 1 ? "…" : `${text.slice(0, max - 1)}…`;
+}
+
 // Stable colour per name, so the same folder keeps its colour between views.
 function hueOf(name: string): number {
   let h = 0;
@@ -106,7 +113,12 @@ export default function DiskMap({ t, fmt }: { t: T; fmt: (bytes: number) => stri
             <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t("mapTitle")}>
               {blocks.map((b) => {
                 const clickable = !!b.node.children && b.node.children.length > 0;
-                const showLabel = b.w > 90 && b.h > 40;
+                // Labels fit the block: the name is cut with an ellipsis when it
+                // does not fit, and small blocks still show a name.
+                const nameChars = Math.floor((b.w - 12) / 8);
+                const sizeChars = Math.floor((b.w - 12) / 7.2);
+                const showName = nameChars >= 3 && b.h >= 20;
+                const showSize = sizeChars >= 5 && b.h >= 38;
                 return (
                   <g
                     key={b.key}
@@ -122,15 +134,15 @@ export default function DiskMap({ t, fmt }: { t: T; fmt: (bytes: number) => stri
                       rx={4}
                       fill={`hsl(${hueOf(b.node.name)} 38% 34%)`}
                     />
-                    {showLabel && (
-                      <>
-                        <text x={b.x + 8} y={b.y + 18} className="tm-name">
-                          {b.node.name}
-                        </text>
-                        <text x={b.x + 8} y={b.y + 34} className="tm-size">
-                          {fmt(b.node.size)}
-                        </text>
-                      </>
+                    {showName && (
+                      <text x={b.x + 8} y={b.y + 16} className="tm-name">
+                        {truncate(b.node.name, nameChars)}
+                      </text>
+                    )}
+                    {showSize && (
+                      <text x={b.x + 8} y={b.y + 32} className="tm-size">
+                        {truncate(fmt(b.node.size), sizeChars)}
+                      </text>
                     )}
                   </g>
                 );
