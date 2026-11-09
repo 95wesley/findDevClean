@@ -1,0 +1,19 @@
+# Run: docker compose up --build
+# Open the URL printed in the logs (it contains the access token).
+#
+# Only the files under $HOME that are mounted are visible to the container.
+# Mounting the home directory lets it find project artifacts and caches.
+# Files are deleted from the host only through quarantine, and undo is
+# available. Use a non-root UID so created files stay owned by you.
+services:
+  findclean:
+    build: .
+    image: finddevclean:latest
+    ports:
+      - "127.0.0.1:7777:7777"
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      HOME: /home/nonroot
+    volumes:
+      - "${HOME}:/home/nonroot"
+    restart: "no"

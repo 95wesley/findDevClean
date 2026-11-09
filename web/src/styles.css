@@ -1,0 +1,264 @@
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --text: #1c1c1a;
+  --muted: #6b6b66;
+  --border: #e2e2dd;
+  --accent: #2f6fdf;
+  --accent-text: #ffffff;
+  --safe: #1f7a4a;
+  --regen: #8a6100;
+  --caution: #b3261e;
+  --alert-bg: #fdecea;
+  --alert-text: #8c1d18;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161615;
+    --surface: #1f1f1d;
+    --text: #ecebe6;
+    --muted: #9a9a93;
+    --border: #33332f;
+    --accent: #6d9bf0;
+    --accent-text: #0d0d0c;
+    --safe: #6fd39a;
+    --regen: #e8b84a;
+    --caution: #ff8a80;
+    --alert-bg: #3a1714;
+    --alert-text: #ffb4ab;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #161615;
+  --surface: #1f1f1d;
+  --text: #ecebe6;
+  --muted: #9a9a93;
+  --border: #33332f;
+  --accent: #6d9bf0;
+  --accent-text: #0d0d0c;
+  --safe: #6fd39a;
+  --regen: #e8b84a;
+  --caution: #ff8a80;
+  --alert-bg: #3a1714;
+  --alert-text: #ffb4ab;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.45;
+}
+
+.wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 24px 0 8px;
+  text-transform: capitalize;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+button {
+  font: inherit;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.alert {
+  background: var(--alert-bg);
+  color: var(--alert-text);
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.summary {
+  margin-bottom: 12px;
+  font-size: 1.05rem;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.item label,
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.item label {
+  width: 100%;
+  cursor: pointer;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.path {
+  font-size: 0.82rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.size {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.badge.safe,
+.status.restored {
+  color: var(--safe);
+}
+
+.badge.regenerable,
+.status.would_remove {
+  color: var(--regen);
+}
+
+.badge.caution,
+.status.failed,
+.status.rejected {
+  color: var(--caution);
+}
+
+.status.removed {
+  color: var(--accent);
+}
+
+.actionbar {
+  position: sticky;
+  bottom: 0;
+  margin-top: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.report {
+  margin-top: 24px;
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  accent-color: var(--accent);
+}
+
+@media (max-width: 480px) {
+  .item label {
+    align-items: flex-start;
+  }
+  .size {
+    font-size: 0.9rem;
+  }
+}

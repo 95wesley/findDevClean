@@ -1,0 +1,9 @@
+bin/
+dist/
+*.test
+web/dist/*
+!web/dist/.gitkeep
+.archify/
+
+# Skill do Archify instalada localmente (reinstalável via skills-lock.json)
+.claude/skills/archify/

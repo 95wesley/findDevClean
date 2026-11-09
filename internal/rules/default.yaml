@@ -1,0 +1,102 @@
+# Regras de limpeza embutidas no binário.
+#
+# Regra de projeto:
+#   dir:     nome exato do diretório a casar (sem glob).
+#   markers: arquivos que precisam existir no diretório PAI para a regra valer.
+#            Lista vazia = casa sempre.
+# Regra global:
+#   paths:   caminhos fixos relativos à pasta home, por plataforma
+#            (darwin | linux | windows).
+# risk:    safe | regenerable | caution
+rules:
+  # --- Projetos -------------------------------------------------------------
+  - id: node-modules
+    name: node_modules
+    category: javascript
+    risk: regenerable
+    dir: node_modules
+    markers: [package.json]
+    description: Dependências do npm, yarn ou pnpm. Reinstale com o gerenciador do projeto.
+
+  - id: rust-target
+    name: target (Cargo)
+    category: rust
+    risk: regenerable
+    dir: target
+    markers: [Cargo.toml]
+    description: Artefatos de build do Cargo. Regenerados com `cargo build`.
+
+  - id: python-pycache
+    name: __pycache__
+    category: python
+    risk: safe
+    dir: __pycache__
+    markers: []
+    description: Bytecode do Python. Recriado automaticamente na próxima execução.
+
+  # --- Caches globais -------------------------------------------------------
+  - id: npm-cache
+    name: Cache do npm
+    category: javascript
+    risk: regenerable
+    paths:
+      darwin: [.npm/_cacache]
+      linux: [.npm/_cacache]
+      windows: [AppData/Local/npm-cache]
+    description: Tarballs baixados pelo npm. Baixados de novo quando necessário.
+
+  - id: pip-cache
+    name: Cache do pip
+    category: python
+    risk: regenerable
+    paths:
+      darwin: [Library/Caches/pip]
+      linux: [.cache/pip]
+      windows: [AppData/Local/pip/Cache]
+    description: Pacotes Python baixados pelo pip.
+
+  - id: cargo-registry-cache
+    name: Cache do Cargo (registry)
+    category: rust
+    risk: regenerable
+    paths:
+      darwin: [.cargo/registry/cache]
+      linux: [.cargo/registry/cache]
+      windows: [.cargo/registry/cache]
+    description: Crates baixados pelo Cargo. Baixados de novo no próximo build.
+
+  - id: gradle-caches
+    name: Caches do Gradle
+    category: java
+    risk: regenerable
+    paths:
+      darwin: [.gradle/caches]
+      linux: [.gradle/caches]
+      windows: [.gradle/caches]
+    description: Dependências e caches do Gradle. Podem ser grandes e são regenerados.
+
+  - id: go-build-cache
+    name: Cache de build do Go
+    category: go
+    risk: regenerable
+    paths:
+      darwin: [Library/Caches/go-build]
+      linux: [.cache/go-build]
+      windows: [AppData/Local/go-build]
+    description: Resultados de compilação do Go. Recriados com `go build`.
+
+  - id: xcode-derived-data
+    name: Xcode DerivedData
+    category: xcode
+    risk: regenerable
+    paths:
+      darwin: [Library/Developer/Xcode/DerivedData]
+    description: Artefatos de build do Xcode. Recriados na próxima compilação.
+
+  - id: homebrew-cache
+    name: Cache do Homebrew
+    category: system
+    risk: safe
+    paths:
+      darwin: [Library/Caches/Homebrew]
+    description: Pacotes baixados pelo Homebrew. Baixados de novo quando necessário.
